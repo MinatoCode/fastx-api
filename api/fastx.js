@@ -8,7 +8,7 @@ const PORT = 3000;
 // Base API
 const dipto = "https://www.noobs-api.rf.gd/dipto/flux";
 
-app.get("/collage", async (req, res) => {
+app.get("/api/fastx", async (req, res) => {
   try {
     const { prompt = "random art", ratio = "512x512" } = req.query;
 

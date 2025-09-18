@@ -7,28 +7,29 @@ const path = require("path");
 
 const dipto = "https://www.noobs-api.rf.gd/dipto/flux";
 
-// Upload buffer to 0x0.st
-async function uploadBufferTo0x0(buffer, filename = "file.png") {
-  const tmpPath = path.join("/tmp", filename); // safe temp path in Vercel
+// Upload buffer to Catbox
+async function uploadBufferToCatbox(buffer, filename = "file.png") {
+  const tmpPath = path.join("/tmp", filename); // safe tmp dir in Vercel
   await fs.promises.writeFile(tmpPath, buffer);
 
   const form = new FormData();
-  form.append("file", fs.createReadStream(tmpPath));
-  form.append("expires", 24); // 24h
+  form.append("reqtype", "fileupload");
+  form.append("userhash", ""); // optional, leave blank
+  form.append("fileToUpload", fs.createReadStream(tmpPath));
 
-  const res = await axios.post("https://0x0.st", form, {
+  const res = await axios.post("https://catbox.moe/user/api.php", form, {
     headers: form.getHeaders(),
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
   });
 
-  return res.data.trim();
+  return res.data.trim(); // returns direct file URL
 }
 
 module.exports = async (req, res) => {
   try {
     const { prompt = "random art" } = req.query;
-    const ratio = "512x512"; // 🔥 fixed default ratio
+    const ratio = "512x512"; // fixed ratio
 
     // Fetch 4 images
     const requests = Array.from({ length: 4 }, () =>
@@ -42,10 +43,10 @@ module.exports = async (req, res) => {
 
     // Upload originals
     const uploadedUrls = await Promise.all(
-      buffers.map((buf, i) => uploadBufferTo0x0(buf, `pic${i + 1}.png`))
+      buffers.map((buf, i) => uploadBufferToCatbox(buf, `pic${i + 1}.png`))
     );
 
-    // Make grid
+    // Make grid (2x2 collage)
     const resized = await Promise.all(buffers.map(buf => sharp(buf).resize(512, 512).toBuffer()));
     const gridBuffer = await sharp({
       create: {
@@ -65,8 +66,9 @@ module.exports = async (req, res) => {
       .toBuffer();
 
     // Upload grid
-    const gridUrl = await uploadBufferTo0x0(gridBuffer, "grid.png");
+    const gridUrl = await uploadBufferToCatbox(gridBuffer, "grid.png");
 
+    // JSON response
     res.json({
       success: true,
       author: "minatocodes",
@@ -81,4 +83,3 @@ module.exports = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-         

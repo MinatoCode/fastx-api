@@ -1,14 +1,20 @@
-// fastx.js
+// api/fastx.js
 const axios = require("axios");
 const FormData = require("form-data");
+const sharp = require("sharp");
 const fs = require("fs");
-const sharp = require("sharp"); // for grid merge
+const path = require("path");
 
-// Upload single file to 0x0.st
-async function uploadTo0x0(filePath) {
+const dipto = "https://www.noobs-api.rf.gd/dipto/flux";
+
+// Upload buffer to 0x0.st
+async function uploadBufferTo0x0(buffer, filename = "file.png") {
+  const tmpPath = path.join("/tmp", filename); // safe temp path in Vercel
+  await fs.promises.writeFile(tmpPath, buffer);
+
   const form = new FormData();
-  form.append("file", fs.createReadStream(filePath));
-  form.append("expires", 24); // 24 hours
+  form.append("file", fs.createReadStream(tmpPath));
+  form.append("expires", 24); // 24h
 
   const res = await axios.post("https://0x0.st", form, {
     headers: form.getHeaders(),
@@ -16,64 +22,63 @@ async function uploadTo0x0(filePath) {
     maxBodyLength: Infinity,
   });
 
-  return res.data.trim(); // returns URL
+  return res.data.trim();
 }
 
-// Create a 2x2 grid with sharp
-async function createGrid(pics, outputFile) {
-  const imgBuffers = await Promise.all(pics.map(p => sharp(p).resize(300, 300).toBuffer()));
-
-  // Combine 4 images in grid
-  const grid = sharp({
-    create: {
-      width: 600,
-      height: 600,
-      channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 },
-    },
-  });
-
-  return grid
-    .composite([
-      { input: imgBuffers[0], left: 0, top: 0 },
-      { input: imgBuffers[1], left: 300, top: 0 },
-      { input: imgBuffers[2], left: 0, top: 300 },
-      { input: imgBuffers[3], left: 300, top: 300 },
-    ])
-    .toFile(outputFile);
-}
-
-// Main handler
-async function handler() {
+module.exports = async (req, res) => {
   try {
-    // Replace with your actual image paths
-    const images = ["./p1.png", "./p2.png", "./p3.png", "./p4.png"];
+    const { prompt = "random art" } = req.query;
+    const ratio = "512x512"; // 🔥 fixed default ratio
+
+    // Fetch 4 images
+    const requests = Array.from({ length: 4 }, () =>
+      axios.get(
+        `${dipto}?prompt=${encodeURIComponent(prompt)}&ratio=${encodeURIComponent(ratio)}`,
+        { responseType: "arraybuffer" }
+      )
+    );
+    const responses = await Promise.all(requests);
+    const buffers = responses.map(r => Buffer.from(r.data));
 
     // Upload originals
-    const uploaded = await Promise.all(images.map(uploadTo0x0));
+    const uploadedUrls = await Promise.all(
+      buffers.map((buf, i) => uploadBufferTo0x0(buf, `pic${i + 1}.png`))
+    );
 
-    // Create grid and upload
-    const gridFile = "./grid.png";
-    await createGrid(images, gridFile);
-    const gridUrl = await uploadTo0x0(gridFile);
+    // Make grid
+    const resized = await Promise.all(buffers.map(buf => sharp(buf).resize(512, 512).toBuffer()));
+    const gridBuffer = await sharp({
+      create: {
+        width: 1024,
+        height: 1024,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    })
+      .composite([
+        { input: resized[0], left: 0, top: 0 },
+        { input: resized[1], left: 512, top: 0 },
+        { input: resized[2], left: 0, top: 512 },
+        { input: resized[3], left: 512, top: 512 },
+      ])
+      .png()
+      .toBuffer();
 
-    const response = {
+    // Upload grid
+    const gridUrl = await uploadBufferTo0x0(gridBuffer, "grid.png");
+
+    res.json({
       success: true,
       author: "minatocodes",
       main_url: gridUrl,
-      p1: uploaded[0],
-      p2: uploaded[1],
-      p3: uploaded[2],
-      p4: uploaded[3],
-    };
-
-    console.log(response);
-    return response;
+      p1: uploadedUrls[0],
+      p2: uploadedUrls[1],
+      p3: uploadedUrls[2],
+      p4: uploadedUrls[3],
+    });
   } catch (err) {
-    console.error("Upload failed:", err.response?.data || err.message);
-    return { success: false, error: err.message };
+    console.error("Error:", err.response?.data || err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
-}
-
-handler();
-      
+};
+         

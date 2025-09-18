@@ -8,12 +8,16 @@ const uploadHost = "https://0x0.st";
 async function uploadTo0x0(buffer, filename = "file.png") {
   const form = new FormData();
   form.append("file", buffer, { filename });
+  form.append("expires", "24"); // ⏱ keep file for 24 hours
 
   const res = await axios.post(uploadHost, form, {
-    headers: form.getHeaders(),
+    headers: {
+      ...form.getHeaders(),
+    },
+    maxBodyLength: Infinity,
   });
 
-  return res.data.trim(); // URL of uploaded file
+  return res.data.trim(); // returns direct URL
 }
 
 module.exports = async (req, res) => {
@@ -36,7 +40,7 @@ module.exports = async (req, res) => {
       images.map(img => sharp(img).resize(512, 512).png().toBuffer())
     );
 
-    // Upload the 4 images individually
+    // Upload the 4 images individually (24h expiry)
     const [p1, p2, p3, p4] = await Promise.all([
       uploadTo0x0(sharpImages[0], "p1.png"),
       uploadTo0x0(sharpImages[1], "p2.png"),
@@ -61,7 +65,7 @@ module.exports = async (req, res) => {
 
     const collageBuffer = await collage.png().toBuffer();
 
-    // Upload collage
+    // Upload collage (24h expiry)
     const main_url = await uploadTo0x0(collageBuffer, "collage.png");
 
     // Respond with JSON
@@ -80,4 +84,3 @@ module.exports = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-       

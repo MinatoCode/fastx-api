@@ -1,7 +1,20 @@
 const axios = require("axios");
 const sharp = require("sharp");
+const FormData = require("form-data");
 
 const dipto = "https://www.noobs-api.rf.gd/dipto/flux";
+const uploadHost = "https://0x0.st";
+
+async function uploadTo0x0(buffer, filename = "file.png") {
+  const form = new FormData();
+  form.append("file", buffer, { filename });
+
+  const res = await axios.post(uploadHost, form, {
+    headers: form.getHeaders(),
+  });
+
+  return res.data.trim(); // URL of uploaded file
+}
 
 module.exports = async (req, res) => {
   try {
@@ -20,8 +33,16 @@ module.exports = async (req, res) => {
 
     // Resize each image to 512x512
     const sharpImages = await Promise.all(
-      images.map(img => sharp(img).resize(512, 512).toBuffer())
+      images.map(img => sharp(img).resize(512, 512).png().toBuffer())
     );
+
+    // Upload the 4 images individually
+    const [p1, p2, p3, p4] = await Promise.all([
+      uploadTo0x0(sharpImages[0], "p1.png"),
+      uploadTo0x0(sharpImages[1], "p2.png"),
+      uploadTo0x0(sharpImages[2], "p3.png"),
+      uploadTo0x0(sharpImages[3], "p4.png"),
+    ]);
 
     // Create a 1024x1024 collage (2x2 grid)
     const collage = sharp({
@@ -38,14 +59,25 @@ module.exports = async (req, res) => {
       { input: sharpImages[3], top: 512, left: 512 },
     ]);
 
-    const buffer = await collage.png().toBuffer();
+    const collageBuffer = await collage.png().toBuffer();
 
-    res.setHeader("Content-Type", "image/png");
-    res.send(buffer);
+    // Upload collage
+    const main_url = await uploadTo0x0(collageBuffer, "collage.png");
+
+    // Respond with JSON
+    res.json({
+      success: true,
+      author: "minatocodes",
+      main_url,
+      p1,
+      p2,
+      p3,
+      p4,
+    });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
 };
-                           
+       
